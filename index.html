@@ -37,7 +37,7 @@ footer { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.8rem; }
 <body>
 <header>
   <h1>🛠️ 开发者工具箱</h1>
-  <p>Base64 · URL · JSON · 正则 · Unicode · Markdown · 二维码</p>
+  <p>Base64 · URL · JSON · 正则 · Unicode · Markdown · 二维码 · 密码生成 · 子网划分</p>
 </header>
 <div class="container">
 
@@ -73,6 +73,14 @@ footer { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.8rem; }
   <div class="tool-card" onclick="showTool('hash')">
     <div class="icon">🔐</div>
     <div class="name">Hash 生成</div>
+  </div>
+  <div class="tool-card" onclick="showTool('password')">
+    <div class="icon">🔑</div>
+    <div class="name">密码生成</div>
+  </div>
+  <div class="tool-card" onclick="showTool('subnet')">
+    <div class="icon">🌐</div>
+    <div class="name">子网划分</div>
   </div>
 </div>
 
@@ -162,6 +170,40 @@ footer { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.8rem; }
     <button class="btn-primary" onclick="generateQR()">生成二维码</button>
   </div>
   <div id="qr-result" style="margin-top:1rem;text-align:center"></div>
+</div>
+
+<!-- Password -->
+<div id="panel-password" class="panel">
+  <h2>随机密码生成器</h2>
+  <p class="desc">自定义长度和字符类型，生成安全随机密码</p>
+  <div style="margin-bottom:0.75rem">
+    <label style="font-size:0.85rem">密码长度：</label>
+    <input type="number" id="pwd-length" value="16" min="4" max="128" style="width:70px;padding:0.4rem;border:1px solid #ddd;border-radius:6px" oninput="genPassword()">
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:0.75rem;font-size:0.85rem">
+    <label><input type="checkbox" id="pwd-upper" checked onchange="genPassword()"> 大写字母 (A-Z)</label>
+    <label><input type="checkbox" id="pwd-lower" checked onchange="genPassword()"> 小写字母 (a-z)</label>
+    <label><input type="checkbox" id="pwd-digit" checked onchange="genPassword()"> 数字 (0-9)</label>
+    <label><input type="checkbox" id="pwd-symbol" checked onchange="genPassword()"> 特殊符号 (!@#$...)</label>
+  </div>
+  <div class="btn-row">
+    <button class="btn-primary" onclick="genPassword()">生成密码</button>
+    <button class="btn-secondary" onclick="copyResult('password')">复制</button>
+  </div>
+  <div class="result" id="password-result" style="font-size:1.1rem;letter-spacing:2px"></div>
+</div>
+
+<!-- Subnet -->
+<div id="panel-subnet" class="panel">
+  <h2>子网划分计算器</h2>
+  <p class="desc">输入 IP 地址和前缀长度，计算子网信息</p>
+  <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap">
+    <input type="text" id="subnet-ip" placeholder="192.168.1.0" style="flex:1;min-width:150px;padding:0.6rem;border:1px solid #ddd;border-radius:8px;font-family:monospace">
+    <span style="line-height:2.4rem">/</span>
+    <input type="number" id="subnet-prefix" placeholder="24" value="24" min="1" max="32" style="width:60px;padding:0.6rem;border:1px solid #ddd;border-radius:8px">
+    <button class="btn-primary" onclick="calcSubnet()">计算</button>
+  </div>
+  <div id="subnet-result" style="margin-top:0.75rem"></div>
 </div>
 
 <!-- Hash -->
@@ -440,6 +482,55 @@ function md5blk(s) {
     md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24);
   }
   return md5blks;
+}
+
+// Password Generator
+function genPassword() {
+  const len = parseInt(document.getElementById('pwd-length').value) || 16;
+  let chars = '';
+  if (document.getElementById('pwd-upper').checked) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  if (document.getElementById('pwd-lower').checked) chars += 'abcdefghijklmnopqrstuvwxyz';
+  if (document.getElementById('pwd-digit').checked) chars += '0123456789';
+  if (document.getElementById('pwd-symbol').checked) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+  if (!chars) { document.getElementById('password-result').textContent = '请至少选择一种字符类型'; return; }
+  let pwd = '';
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < len; i++) pwd += chars[arr[i] % chars.length];
+  document.getElementById('password-result').textContent = pwd;
+  document.getElementById('password-result').className = 'result';
+}
+
+// Subnet Calculator
+function calcSubnet() {
+  const ip = document.getElementById('subnet-ip').value.trim();
+  const prefix = parseInt(document.getElementById('subnet-prefix').value) || 24;
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some(isNaN)) {
+    document.getElementById('subnet-result').innerHTML = '<span style="color:#dc2626">请输入有效的 IPv4 地址</span>'; return;
+  }
+  const ipInt = (parts[0]<<24)|(parts[1]<<16)|(parts[2]<<8)|parts[3];
+  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+  const network = (ipInt & mask) >>> 0;
+  const broadcast = (network | (~mask) >>> 0) >>> 0;
+  const hostCount = Math.max(0, 32 - prefix) > 0 ? Math.pow(2, 32 - prefix) - 2 : 0;
+  const firstHost = hostCount > 0 ? network + 1 : network;
+  const lastHost = hostCount > 0 ? broadcast - 1 : broadcast;
+
+  function intToIP(n) {
+    return [(n>>>24)&255, (n>>>16)&255, (n>>>8)&255, n&255].join('.');
+  }
+  const info = [
+    ['网络地址', intToIP(network) + '/' + prefix],
+    ['子网掩码', intToIP(mask)],
+    ['广播地址', intToIP(broadcast)],
+    ['首个可用 IP', hostCount > 0 ? intToIP(firstHost) : '-'],
+    ['最后可用 IP', hostCount > 0 ? intToIP(lastHost) : '-'],
+    ['可用主机数', hostCount > 0 ? hostCount.toLocaleString() : '0'],
+    ['IP总数', Math.pow(2, 32 - prefix).toLocaleString()],
+  ];
+  document.getElementById('subnet-result').innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem">' +
+    info.map(([k,v]) => '<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px 12px;color:#6b7280">'+k+'</td><td style="padding:6px 12px;font-family:monospace;font-weight:600">'+v+'</td></tr>').join('') + '</table>';
 }
 
 // Copy result
