@@ -206,14 +206,64 @@ footer { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.8rem; }
 <!-- Subnet -->
 <div id="panel-subnet" class="panel">
   <h2>子网划分计算器</h2>
-  <p class="desc">输入 IP 地址和前缀长度，计算子网信息</p>
-  <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap">
-    <input type="text" id="subnet-ip" placeholder="192.168.1.0" style="flex:1;min-width:150px;padding:0.6rem;border:1px solid #ddd;border-radius:8px;font-family:monospace">
-    <span style="line-height:2.4rem">/</span>
-    <input type="number" id="subnet-prefix" placeholder="24" value="24" min="1" max="32" style="width:60px;padding:0.6rem;border:1px solid #ddd;border-radius:8px">
-    <button class="btn-primary" onclick="calcSubnet()">计算</button>
+  <p class="desc">支持标准计算、IP反查、需求反推、进制转换</p>
+
+  <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;align-items:center">
+    <select id="subnet-mode" onchange="toggleSubnetMode()" style="padding:0.5rem;border:1px solid #ddd;border-radius:8px;font-size:0.85rem">
+      <option value="calc">📐 标准计算</option>
+      <option value="lookup">🔍 IP 反查</option>
+      <option value="required">📐 按需计算</option>
+      <option value="conv">🔢 进制转换</option>
+    </select>
   </div>
-  <div id="subnet-result" style="margin-top:0.75rem"></div>
+
+  <!-- 标准计算 -->
+  <div id="subnet-mode-calc" style="display:block">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;align-items:center">
+      <input type="text" id="subnet-ip" placeholder="192.168.1.0" style="flex:1;min-width:150px;padding:0.6rem;border:1px solid #ddd;border-radius:8px;font-family:monospace">
+      <span style="line-height:2.4rem">/</span>
+      <input type="number" id="subnet-prefix" placeholder="24" value="24" min="1" max="32" style="width:60px;padding:0.6rem;border:1px solid #ddd;border-radius:8px">
+      <button class="btn-primary" onclick="calcSubnet()">计算</button>
+    </div>
+  </div>
+
+  <!-- IP反查 -->
+  <div id="subnet-mode-lookup" style="display:none">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;align-items:center">
+      <input type="text" id="lookup-ip" placeholder="要查询的 IP，如 192.168.1.50" style="flex:1;min-width:180px;padding:0.6rem;border:1px solid #ddd;border-radius:8px;font-family:monospace">
+      <button class="btn-primary" onclick="lookupIP()">反查</button>
+    </div>
+    <div style="margin-bottom:0.75rem">
+      <p style="font-size:0.8rem;color:#6b7280;margin-bottom:0.5rem">输入已知网段（多个换行），如 192.168.1.0/24</p>
+      <textarea id="lookup-known" rows="4" placeholder="192.168.1.0/24\n10.0.0.0/8\n172.16.0.0/16" style="width:100%;padding:0.6rem;border:1px solid #ddd;border-radius:8px;font-family:monospace;font-size:0.85rem;resize:vertical"></textarea>
+    </div>
+  </div>
+
+  <!-- 按需计算 -->
+  <div id="subnet-mode-required" style="display:none">
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;align-items:center">
+      <input type="number" id="required-hosts" placeholder="需要多少台主机" min="1" style="flex:1;min-width:150px;padding:0.6rem;border:1px solid #ddd;border-radius:8px">
+      <button class="btn-primary" onclick="calcRequired()">计算前缀</button>
+    </div>
+    <div style="font-size:0.82rem;color:#6b7280;margin-bottom:0.75rem">公式：所需主机数 + 2（网络号+广播号）→ 向上取 2 的幂 → 对应前缀</div>
+  </div>
+
+  <!-- 进制转换 -->
+  <div id="subnet-mode-conv" style="display:none">
+    <div style="margin-bottom:0.75rem">
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;align-items:center">
+        <select id="conv-from" onchange="convertIP()" style="padding:0.5rem;border:1px solid #ddd;border-radius:8px;font-size:0.85rem">
+          <option value="d2i">点分十进制 → 整数</option>
+          <option value="i2d">整数 → 点分十进制</option>
+          <option value="d2b">点分十进制 → 二进制</option>
+          <option value="i2b">整数 → 二进制</option>
+        </select>
+      </div>
+      <input type="text" id="conv-input" placeholder="192.168.1.1 或 3232235777" style="width:100%;padding:0.6rem;border:1px solid #ddd;border-radius:8px;font-family:monospace;margin-bottom:0.5rem" oninput="convertIP()">
+    </div>
+  </div>
+
+  <div id="subnet-result" style="margin-top:0.5rem"></div>
 </div>
 
 <!-- Hash -->
@@ -519,35 +569,120 @@ function genPassword() {
 }
 
 // Subnet Calculator
+function intToIP(n) { return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join('.'); }
+function ipToInt(ip) { const p=ip.split('.').map(Number); if(p.length!==4||p.some(isNaN))return null; return (p[0]<<24|p[1]<<16|p[2]<<8|p[3])>>>0; }
+function toBin(n,len) { return n.toString(2).padStart(len,'0'); }
+
+function toggleSubnetMode() {
+  const mode = document.getElementById('subnet-mode').value;
+  ['calc','lookup','required','conv'].forEach(m => {
+    document.getElementById('subnet-mode-'+m).style.display = m === mode ? 'block' : 'none';
+  });
+  document.getElementById('subnet-result').innerHTML = '';
+}
+
 function calcSubnet() {
   const ip = document.getElementById('subnet-ip').value.trim();
   const prefix = parseInt(document.getElementById('subnet-prefix').value) || 24;
-  const parts = ip.split('.').map(Number);
-  if (parts.length !== 4 || parts.some(isNaN)) {
-    document.getElementById('subnet-result').innerHTML = '<span style="color:#dc2626">请输入有效的 IPv4 地址</span>'; return;
-  }
-  const ipInt = (parts[0]<<24)|(parts[1]<<16)|(parts[2]<<8)|parts[3];
-  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
-  const network = (ipInt & mask) >>> 0;
-  const broadcast = (network | (~mask) >>> 0) >>> 0;
-  const hostCount = Math.max(0, 32 - prefix) > 0 ? Math.pow(2, 32 - prefix) - 2 : 0;
-  const firstHost = hostCount > 0 ? network + 1 : network;
-  const lastHost = hostCount > 0 ? broadcast - 1 : broadcast;
-
-  function intToIP(n) {
-    return [(n>>>24)&255, (n>>>16)&255, (n>>>8)&255, n&255].join('.');
-  }
+  const ipInt = ipToInt(ip);
+  if (ipInt === null) { document.getElementById('subnet-result').innerHTML='<span style="color:#dc2626">请输入有效的 IPv4 地址</span>'; return; }
+  const mask = prefix===0 ? 0 : (~0<<(32-prefix))>>>0;
+  const network = (ipInt & mask)>>>0;
+  const broadcast = (network | (~mask>>>0))>>>0;
+  const hostCount = prefix>=31 ? (prefix===31?2:1) : Math.pow(2,32-prefix)-2;
+  const firstHost = prefix>=31 ? network : network+1;
+  const lastHost = prefix>=31 ? broadcast : broadcast-1;
+  const wildcard = (~mask)>>>0;
   const info = [
-    ['网络地址', intToIP(network) + '/' + prefix],
-    ['子网掩码', intToIP(mask)],
-    ['广播地址', intToIP(broadcast)],
-    ['首个可用 IP', hostCount > 0 ? intToIP(firstHost) : '-'],
-    ['最后可用 IP', hostCount > 0 ? intToIP(lastHost) : '-'],
-    ['可用主机数', hostCount > 0 ? hostCount.toLocaleString() : '0'],
-    ['IP总数', Math.pow(2, 32 - prefix).toLocaleString()],
+    ['网络地址', intToIP(network)+'/'+prefix, 'CIDR 表示法'],
+    ['子网掩码', intToIP(mask), '255.255.255.0 格式'],
+    ['通配符掩码', intToIP(wildcard), '子网掩码取反'],
+    ['广播地址', intToIP(broadcast), '同段广播用'],
+    ['首个可用 IP', prefix>=31?'-':intToIP(firstHost), '网关常用'],
+    ['最后可用 IP', prefix>=31?'-':intToIP(lastHost), ''],
+    ['可用主机数', hostCount.toLocaleString(), prefix<31?'(减2网络号+广播)':'(/31点对点)'],
+    ['IP 总数', Math.pow(2,32-prefix).toLocaleString(), '该子网全部 IP'],
+    ['IP → 整数', ipInt.toLocaleString(), '十进制存储值'],
+    ['IP → 二进制', toBin(ipInt>>>16,16)+'.'+toBin(ipInt&0xffff,16), '便于理解结构'],
   ];
-  document.getElementById('subnet-result').innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem">' +
-    info.map(([k,v]) => '<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:6px 12px;color:#6b7280">'+k+'</td><td style="padding:6px 12px;font-family:monospace;font-weight:600">'+v+'</td></tr>').join('') + '</table>';
+  document.getElementById('subnet-result').innerHTML='<table style="width:100%;border-collapse:collapse;font-size:0.85rem">'+info.map(([k,v,n])=>'<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:5px 10px;color:#6b7280">'+k+'</td><td style="padding:5px 10px;font-family:monospace;font-weight:600">'+v+'</td><td style="padding:5px 10px;color:#9ca3af;font-size:0.78rem">'+n+'</td></tr>').join('')+'</table>';
+}
+
+function lookupIP() {
+  const ip = document.getElementById('lookup-ip').value.trim();
+  const knownText = document.getElementById('lookup-known').value.trim();
+  const ipInt = ipToInt(ip);
+  if (ipInt === null) { document.getElementById('subnet-result').innerHTML='<span style="color:#dc2626">请输入有效的 IP 地址</span>'; return; }
+  if (!knownText) { document.getElementById('subnet-result').innerHTML='<span style="color:#dc2626">请输入至少一个已知网段</span>'; return; }
+  const lines = knownText.split('\n').map(l=>l.trim()).filter(Boolean);
+  const results = [];
+  for (const line of lines) {
+    const m = line.match(/^([\d.]+)\/(\d+)$/);
+    if (!m) continue;
+    const netIP = ipToInt(m[1]);
+    const prefix = parseInt(m[2]);
+    const mask = (~0<<(32-prefix))>>>0;
+    const network = (netIP & mask)>>>0;
+    const broadcast = (network | (~mask>>>0))>>>0;
+    if (ipInt >= network && ipInt <= broadcast) {
+      const maskIP = intToIP(mask);
+      results.push({line, network:intToIP(network), broadcast:intToIP(broadcast), prefix, mask:maskIP, matched:true});
+    }
+  }
+  if (results.length === 0) {
+    document.getElementById('subnet-result').innerHTML='<span style="color:#dc2626">该 IP 不在已知网段范围内</span>';
+  } else {
+    document.getElementById('subnet-result').innerHTML='<p style="color:#059669;font-size:0.85rem;margin-bottom:0.5rem">✅ 找到匹配网段：</p><table style="width:100%;border-collapse:collapse;font-size:0.85rem">'+results.map(r=>'<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:5px 10px;color:#059669">'+r.line+'</td><td style="padding:5px 10px">'+r.network+'/'+r.prefix+'</td><td style="padding:5px 10px;font-family:monospace">掩码:'+r.mask+'</td></tr>').join('')+'</table>';
+  }
+}
+
+function calcRequired() {
+  const hosts = parseInt(document.getElementById('required-hosts').value);
+  if (!hosts || hosts < 1) { document.getElementById('subnet-result').innerHTML='<span style="color:#dc2626">请输入有效的主机数量</span>'; return; }
+  const need = hosts + 2;
+  const bits = Math.ceil(Math.log2(need));
+  const prefix = 32 - bits;
+  const total = Math.pow(2, bits);
+  const usable = total - 2;
+  const mask = (~0<<bits)>>>0;
+  const info = [
+    ['需要前缀', '/'+prefix, '最小满足需求的子网'],
+    ['子网掩码', intToIP(mask), '255.255.255.x 格式'],
+    ['该子网总 IP', total.toLocaleString(), '2^'+bits+' = '+total],
+    ['可用主机数', usable > 0 ? usable.toLocaleString() : '1 (点对点/31)', ''],
+    ['建议网关', intToIP(((~0<<(32-prefix))>>>0)+1), '该子网第一个可用 IP'],
+  ];
+  document.getElementById('subnet-result').innerHTML='<table style="width:100%;border-collapse:collapse;font-size:0.85rem">'+info.map(([k,v,n])=>'<tr style="border-bottom:1px solid #e5e7eb"><td style="padding:5px 10px;color:#6b7280">'+k+'</td><td style="padding:5px 10px;font-family:monospace;font-weight:600">'+v+'</td><td style="padding:5px 10px;color:#9ca3af;font-size:0.78rem">'+n+'</td></tr>').join('')+'</table>';
+}
+
+function convertIP() {
+  const mode = document.getElementById('conv-from').value;
+  const input = document.getElementById('conv-input').value.trim();
+  const el = document.getElementById('subnet-result');
+  if (!input) { el.innerHTML=''; return; }
+  try {
+    let result = '';
+    if (mode === 'd2i') {
+      const n = ipToInt(input);
+      if (n === null) throw new Error('无效 IP');
+      result = '整数：'+n.toLocaleString()+'\n十六进制：0x'+n.toString(16).toUpperCase().padStart(8,'0');
+    } else if (mode === 'i2d') {
+      const n = parseInt(input);
+      if (isNaN(n)) throw new Error('无效整数');
+      result = '点分十进制：'+intToIP(n>>>0)+'\n二进制：'+toBin(n>>>0,32).replace(/(.{8})/g,'$1.').trim('.');
+    } else if (mode === 'd2b') {
+      const n = ipToInt(input);
+      if (n === null) throw new Error('无效 IP');
+      result = '二进制：'+toBin(n>>>0,32).replace(/(.{8})/g,'$1.').trim('.')+'\n整数：'+n.toLocaleString();
+    } else if (mode === 'i2b') {
+      const n = parseInt(input);
+      if (isNaN(n)) throw new Error('无效整数');
+      result = '二进制：'+toBin(n>>>0,32).replace(/(.{8})/g,'$1.').trim('.')+'\n点分十进制：'+intToIP(n>>>0);
+    }
+    el.innerHTML='<pre style="font-family:monospace;font-size:0.9rem;line-height:1.6;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;white-space:pre-wrap">'+result+'</pre>';
+  } catch(e) {
+    el.innerHTML='<span style="color:#dc2626">'+e.message+'</span>';
+  }
 }
 
 // Copy result
