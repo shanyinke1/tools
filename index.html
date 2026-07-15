@@ -176,9 +176,19 @@ footer { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.8rem; }
 <div id="panel-password" class="panel">
   <h2>随机密码生成器</h2>
   <p class="desc">自定义长度和字符类型，生成安全随机密码</p>
-  <div style="margin-bottom:0.75rem">
-    <label style="font-size:0.85rem">密码长度：</label>
-    <input type="number" id="pwd-length" value="16" min="4" max="128" style="width:70px;padding:0.4rem;border:1px solid #ddd;border-radius:6px" oninput="genPassword()">
+  <div style="display:flex;flex-wrap:wrap;gap:0.75rem;margin-bottom:0.75rem;font-size:0.85rem">
+    <div>
+      <label style="font-size:0.85rem">密码长度：</label>
+      <input type="number" id="pwd-length" value="16" min="4" max="128" style="width:70px;padding:0.4rem;border:1px solid #ddd;border-radius:6px" oninput="genPassword()">
+    </div>
+    <div>
+      <label style="font-size:0.85rem">生成数量：</label>
+      <input type="number" id="pwd-count" value="1" min="1" max="20" style="width:55px;padding:0.4rem;border:1px solid #ddd;border-radius:6px" oninput="genPassword()">
+    </div>
+    <div>
+      <label style="font-size:0.85rem">过滤字符：</label>
+      <input type="text" id="pwd-filter" placeholder="如 0O1lI" size="8" style="padding:0.4rem;border:1px solid #ddd;border-radius:6px" oninput="genPassword()">
+    </div>
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:0.75rem;font-size:0.85rem">
     <label><input type="checkbox" id="pwd-upper" checked onchange="genPassword()"> 大写字母 (A-Z)</label>
@@ -487,17 +497,24 @@ function md5blk(s) {
 // Password Generator
 function genPassword() {
   const len = parseInt(document.getElementById('pwd-length').value) || 16;
+  const count = Math.min(Math.max(parseInt(document.getElementById('pwd-count').value) || 1, 1), 20);
+  const filterChars = (document.getElementById('pwd-filter').value || '').split('');
   let chars = '';
   if (document.getElementById('pwd-upper').checked) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   if (document.getElementById('pwd-lower').checked) chars += 'abcdefghijklmnopqrstuvwxyz';
   if (document.getElementById('pwd-digit').checked) chars += '0123456789';
   if (document.getElementById('pwd-symbol').checked) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+  if (filterChars.length) chars = chars.split('').filter(c => !filterChars.includes(c)).join('');
   if (!chars) { document.getElementById('password-result').textContent = '请至少选择一种字符类型'; return; }
-  let pwd = '';
-  const arr = new Uint32Array(len);
+  const results = [];
+  const arr = new Uint32Array(len * count);
   crypto.getRandomValues(arr);
-  for (let i = 0; i < len; i++) pwd += chars[arr[i] % chars.length];
-  document.getElementById('password-result').textContent = pwd;
+  for (let j = 0; j < count; j++) {
+    let pwd = '';
+    for (let i = 0; i < len; i++) pwd += chars[arr[j * len + i] % chars.length];
+    results.push(pwd);
+  }
+  document.getElementById('password-result').textContent = results.join('\n');
   document.getElementById('password-result').className = 'result';
 }
 
